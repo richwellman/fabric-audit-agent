@@ -1,0 +1,50 @@
+# Audit rule set
+
+The rules are the product — the collector just feeds them. Each rule has an ID, severity, what it flags, and why a client should care. Severities: **HIGH** (real exposure, act now), **MEDIUM** (governance gap, plan remediation), **LOW** (hygiene).
+
+## RBAC
+
+| ID | Severity | Rule | Why it matters |
+|----|----------|------|----------------|
+| RBAC-01 | HIGH | Guest (B2B) user holds any workspace role (UPN contains `#EXT#`) | External identity inside the tenant's data estate; HIPAA/compliance exposure if PHI-adjacent |
+| RBAC-02 | MEDIUM | Workspace has more than 3 Admins | Admin sprawl defeats least-privilege; admins can delete the workspace and change access |
+| RBAC-03 | HIGH | Workspace has zero Admins | Orphaned workspace — nobody owns access decisions |
+| RBAC-04 | MEDIUM | Individual user grants where >10 individuals share the same role in one workspace | Should be a security group; individual grants rot as people move |
+| RBAC-05 | MEDIUM | Service principal holds Admin or Member (not Viewer/Contributor) | Automation identities rarely need admin; broad SP access is a lateral-movement risk |
+
+## External exposure
+
+| ID | Severity | Rule | Why it matters |
+|----|----------|------|----------------|
+| EXP-01 | HIGH | Report published to web (`publishedToWeb`) | Public internet exposure — anyone with the URL, no auth |
+| EXP-02 | MEDIUM | Item shared via link to the whole organization | Every employee incl. future hires; usually broader than intended |
+
+## Sensitivity labels
+
+| ID | Severity | Rule | Why it matters |
+|----|----------|------|----------------|
+| LBL-01 | MEDIUM | Semantic model / lakehouse / warehouse with no sensitivity label | Unlabeled data can't be governed by DLP; Purview policies don't apply |
+| LBL-02 | LOW | Workspace label coverage below 80% | Signals labeling isn't operationalized in that team |
+
+## Endorsement / trust
+
+| ID | Severity | Rule | Why it matters |
+|----|----------|------|----------------|
+| END-01 | LOW | Semantic model neither certified nor promoted, but consumed by reports in other workspaces | Cross-workspace dependency on unvetted data |
+
+## Hygiene
+
+| ID | Severity | Rule | Why it matters |
+|----|----------|------|----------------|
+| HYG-01 | LOW | Workspace on Premium/Fabric capacity with no modifications in 90+ days | Paying capacity for a dead workspace; also a stale-access surface |
+
+## Deliberately out of scope (v1)
+
+- Item-level permissions inside a workspace (scanner API returns workspace-level users; item-level needs per-item calls — v2)
+- Activity-log correlation (who actually *used* the access) — v2, requires activity events API
+- OneLake shortcut review to external sources (S3/ADLS) — v2, needs Fabric item detail APIs
+- Auto-remediation of any kind — this tool is read-only by design; remediation is the consulting conversation
+
+## Tuning knobs
+
+Thresholds live in `src/audit.py` as constants: `MAX_ADMINS=3`, `GROUP_THRESHOLD=10`, `LABEL_COVERAGE_MIN=0.80`, `STALE_DAYS=90`. First real scan will tell us whether these defaults are sane.
