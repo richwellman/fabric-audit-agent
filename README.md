@@ -2,7 +2,7 @@
 
 Automated security audit of a Microsoft Fabric / Power BI tenant. Scans every workspace via the admin **scanner APIs** and produces a findings report covering workspace RBAC, external/guest access, sensitivity-label coverage, endorsement, service-principal access, and org-wide/public exposure.
 
-Built as a fixed-scope, demoable audit — point it at a tenant with a read-only service principal, get a prioritized findings report back.
+Built as a fixed-scope, demoable audit — point it at a tenant as a signed-in Fabric/Power BI admin, get a prioritized findings report back.
 
 ## What it checks
 
@@ -25,7 +25,7 @@ Two modes, one data layer:
 2. **Agent/MCP demo mode (phase 2)** — the same audit narrated live through an MCP-connected agent (Fabric Core Remote MCP at `https://api.fabric.microsoft.com/v1/mcp/core`). This is the 15-minute prospect demo path.
 
 ```
-Entra service principal (read-only admin APIs)
+Your Azure/Entra sign-in (az login, via DefaultAzureCredential)
         │
         ▼
 GetModifiedWorkspaces  ──► workspace ID inventory
@@ -44,20 +44,17 @@ audit.py (rules)  ──►  report.py  ──►  output/audit-report-YYYY-MM-D
 
 ## Prerequisites (tenant-side setup)
 
-These are one-time steps a Fabric admin performs — also the first conversation with any client:
-
-1. **Entra app registration** (no delegated Power BI permissions — see below), plus a client secret.
-2. Put the app in an **Entra security group**.
-3. Fabric admin portal → Tenant settings:
-   - **Allow service principals to use read-only admin APIs** → enabled for that security group
+1. Run `az login` as a user with a **Fabric admin / Power BI admin** role (or Global Admin) in the target tenant. The collector authenticates as *you*, via `DefaultAzureCredential` — no app registration or client secret required.
+2. Fabric admin portal → Tenant settings:
    - **Enhance admin APIs responses with detailed metadata** → enabled (needed for labels/users detail)
-4. ⚠️ **The app must have NO admin-consent-required Power BI permissions set on it.** Per Microsoft docs, service-principal auth for read-only admin APIs is mutually exclusive with delegated admin permissions — a common setup failure.
+3. If token acquisition fails with a consent/permission error, the Azure CLI's first-party app may need admin consent for the Power BI Service API in your tenant — a tenant admin can grant this once via the Entra admin center (Enterprise applications → Azure CLI → Permissions).
 
 ## Running
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # fill in TENANT_ID, CLIENT_ID, CLIENT_SECRET
+az login
+cp .env.example .env   # optional: set TENANT_ID if az login has access to more than one tenant
 python -m src.main
 ```
 
@@ -65,9 +62,9 @@ Output lands in `output/audit-report-<date>.md`.
 
 ## Security notes
 
-- The service principal is **read-only** — the auditor never mutates anything.
+- The scan runs **read-only** — the auditor never mutates anything.
 - Scan results contain user identities and item names; treat `output/` as confidential and don't commit it (gitignored).
-- If later exposing this via the Power BI Remote MCP: **RLS is not enforced for service-principal auth** on that endpoint — do not put SP-authenticated query access in front of end users.
+- Auth is delegated (your own identity, via `DefaultAzureCredential`), so all API calls are attributable to you and bounded by your own admin permissions — no long-lived secret to manage or leak.
 
 ## Status
 

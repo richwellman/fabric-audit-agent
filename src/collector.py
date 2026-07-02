@@ -4,20 +4,19 @@ Flow (all read-only):
   GetModifiedWorkspaces -> PostWorkspaceInfo -> poll GetScanStatus -> GetScanResult
 plus the widelySharedArtifacts endpoints for public/org-wide exposure.
 
-Auth is a service principal (client credentials). The app must have NO
-admin-consent-required Power BI permissions, and the tenant settings
-"Allow service principals to use read-only admin APIs" and "Enhance admin
-APIs responses with detailed metadata" must be enabled for the app's
-security group. See README.
+Auth is delegated, via DefaultAzureCredential (your `az login` session, or
+whatever other credential source is available in the environment). Your
+Entra account needs the tenant admin API permissions used by the scanner
+(e.g. Fabric/Power BI admin role) — see README.
 """
 
 import time
 
-import msal
 import requests
+from azure.core.exceptions import ClientAuthenticationError
+from azure.identity import DefaultAzureCredential
 
-AUTHORITY = "https://login.microsoftonline.com/{tenant_id}"
-SCOPE = ["https://analysis.windows.net/powerbi/api/.default"]
+SCOPE = "https://analysis.windows.net/powerbi/api/.default"
 BASE = "https://api.powerbi.com/v1.0/myorg/admin"
 
 # Scanner API limits (per Microsoft docs): max 100 workspaces per getInfo
@@ -28,20 +27,14 @@ POLL_TIMEOUT_SECONDS = 30 * 60
 
 
 class Collector:
-    def __init__(self, tenant_id: str, client_id: str, client_secret: str):
-        self._app = msal.ConfidentialClientApplication(
-            client_id,
-            authority=AUTHORITY.format(tenant_id=tenant_id),
-            client_credential=client_secret,
-        )
+    def __init__(self, tenant_id: str | None = None):
+        self._credential = DefaultAzureCredential(tenant_id=tenant_id)
 
     def _token(self) -> str:
-        result = self._app.acquire_token_for_client(scopes=SCOPE)
-        if "access_token" not in result:
-            raise RuntimeError(
-                f"Auth failed: {result.get('error')}: {result.get('error_description')}"
-            )
-        return result["access_token"]
+        try:
+            return self._credential.get_token(SCOPE).token
+        except ClientAuthenticationError as e:
+            raise RuntimeError(f"Auth failed: {e}") from e
 
     def _get(self, path: str, params: dict | None = None) -> dict | list:
         resp = requests.get(
