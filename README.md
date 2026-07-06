@@ -26,6 +26,7 @@ Two modes, one data layer:
 
 ```
 Your Azure/Entra sign-in (az login, via DefaultAzureCredential)
+        │  — or a service principal (client secret) for unattended runs
         │
         ▼
 GetModifiedWorkspaces  ──► workspace ID inventory
@@ -44,17 +45,29 @@ audit.py (rules)  ──►  report.py  ──►  output/audit-report-YYYY-MM-D
 
 ## Prerequisites (tenant-side setup)
 
+Two auth options — pick one:
+
+**A. Delegated (default, recommended for interactive/ad-hoc runs)**
+
 1. Run `az login` as a user with a **Fabric admin / Power BI admin** role (or Global Admin) in the target tenant. The collector authenticates as *you*, via `DefaultAzureCredential` — no app registration or client secret required.
-2. Fabric admin portal → Tenant settings:
-   - **Enhance admin APIs responses with detailed metadata** → enabled (needed for labels/users detail)
-3. If token acquisition fails with a consent/permission error, the Azure CLI's first-party app may need admin consent for the Power BI Service API in your tenant — a tenant admin can grant this once via the Entra admin center (Enterprise applications → Azure CLI → Permissions).
+2. If token acquisition fails with a consent/permission error, the Azure CLI's first-party app may need admin consent for the Power BI Service API in your tenant — a tenant admin can grant this once via the Entra admin center (Enterprise applications → Azure CLI → Permissions).
+
+**B. Service principal (for unattended/CI/scheduled runs)**
+
+1. **Entra app registration**, plus a client secret. The app must have **NO admin-consent-required Power BI permissions** — per Microsoft docs, service-principal auth for read-only admin APIs is mutually exclusive with delegated admin permissions, a common setup failure.
+2. Put the app in an **Entra security group**.
+3. Fabric admin portal → Tenant settings → **Allow service principals to use read-only admin APIs** → enabled for that security group.
+4. Set `TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET` in `.env`.
+
+Either way, also enable:
+- Fabric admin portal → Tenant settings → **Enhance admin APIs responses with detailed metadata** (needed for labels/users detail)
 
 ## Running
 
 ```bash
 pip install -r requirements.txt
-az login
-cp .env.example .env   # optional: set TENANT_ID if az login has access to more than one tenant
+az login   # skip if using a service principal (option B above)
+cp .env.example .env   # set TENANT_ID / CLIENT_ID / CLIENT_SECRET as needed
 python -m src.main
 ```
 
@@ -64,7 +77,9 @@ Output lands in `output/audit-report-<date>.md`.
 
 - The scan runs **read-only** — the auditor never mutates anything.
 - Scan results contain user identities and item names; treat `output/` as confidential and don't commit it (gitignored).
-- Auth is delegated (your own identity, via `DefaultAzureCredential`), so all API calls are attributable to you and bounded by your own admin permissions — no long-lived secret to manage or leak.
+- Delegated auth (default) runs as your own identity, so all API calls are attributable to you and bounded by your own admin permissions — no long-lived secret to manage or leak. Prefer this unless you need unattended/scheduled runs.
+- If using a service principal instead: it is **read-only**, and the client secret is a long-lived credential — store it securely (not in `.env` committed to git; it's gitignored here) and rotate it periodically.
+- If later exposing this via the Power BI Remote MCP: **RLS is not enforced for service-principal auth** on that endpoint — do not put SP-authenticated query access in front of end users.
 
 ## Status
 

@@ -12,7 +12,11 @@ from .collector import Collector
 
 def main() -> None:
     load_dotenv()
-    collector = Collector(tenant_id=os.environ.get("TENANT_ID"))
+    collector = Collector(
+        tenant_id=os.environ.get("TENANT_ID"),
+        client_id=os.environ.get("CLIENT_ID"),
+        client_secret=os.environ.get("CLIENT_SECRET"),
+    )
 
     ids = collector.workspace_ids()
     print(f"Scanning {len(ids)} workspaces...")

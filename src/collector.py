@@ -4,17 +4,19 @@ Flow (all read-only):
   GetModifiedWorkspaces -> PostWorkspaceInfo -> poll GetScanStatus -> GetScanResult
 plus the widelySharedArtifacts endpoints for public/org-wide exposure.
 
-Auth is delegated, via DefaultAzureCredential (your `az login` session, or
-whatever other credential source is available in the environment). Your
-Entra account needs the tenant admin API permissions used by the scanner
-(e.g. Fabric/Power BI admin role) — see README.
+Auth is delegated by default, via DefaultAzureCredential (your `az login`
+session, or whatever other credential source is available in the
+environment) — your Entra account needs the tenant admin API permissions
+used by the scanner (e.g. Fabric/Power BI admin role). For unattended/CI
+runs, pass client_id/client_secret to authenticate as a service principal
+instead; see README for the tenant settings that permission requires.
 """
 
 import time
 
 import requests
 from azure.core.exceptions import ClientAuthenticationError
-from azure.identity import DefaultAzureCredential
+from azure.identity import ClientSecretCredential, DefaultAzureCredential
 
 SCOPE = "https://analysis.windows.net/powerbi/api/.default"
 BASE = "https://api.powerbi.com/v1.0/myorg/admin"
@@ -27,8 +29,20 @@ POLL_TIMEOUT_SECONDS = 30 * 60
 
 
 class Collector:
-    def __init__(self, tenant_id: str | None = None):
-        self._credential = DefaultAzureCredential(tenant_id=tenant_id)
+    def __init__(
+        self,
+        tenant_id: str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+    ):
+        if client_id and client_secret:
+            if not tenant_id:
+                raise ValueError("TENANT_ID is required when using a service principal")
+            self._credential = ClientSecretCredential(
+                tenant_id=tenant_id, client_id=client_id, client_secret=client_secret
+            )
+        else:
+            self._credential = DefaultAzureCredential(tenant_id=tenant_id)
 
     def _token(self) -> str:
         try:
