@@ -26,6 +26,7 @@ def main() -> None:
 
     findings = audit.run(workspaces, ptw, org_links)
     out = pathlib.Path("output") / f"audit-report-{date.today().isoformat()}.md"
+    out.parent.mkdir(exist_ok=True)
     out.write_text(report.render(findings, len(workspaces)))
     print(f"Wrote {out} ({len(findings)} findings)")
 
